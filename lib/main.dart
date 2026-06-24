@@ -31,6 +31,12 @@ class PhysicsSettings {
 
 final physics = PhysicsSettings();
 
+class Bullet {
+  Offset pos;
+  Offset vel;
+  Bullet(this.pos, this.vel);
+}
+
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
   @override
@@ -61,12 +67,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   double enemyTimer = 10.0;
   List<Bullet> enemyBullets = [];
   double enemyShootCooldown = 0;
-}
-
-class Bullet {
-  Offset pos;
-  Offset vel;
-  Bullet(this.pos, this.vel);
 
   @override
   void initState() { 
