@@ -59,8 +59,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   double enemyThrottle = 0;
   bool enemyActive = false;
   double enemyTimer = 10.0;
-  List<Offset> enemyBullets = [];
+  List<Bullet> enemyBullets = [];
   double enemyShootCooldown = 0;
+}
+
+class Bullet {
+  Offset pos;
+  Offset vel;
+  Bullet(this.pos, this.vel);
 
   @override
   void initState() { 
@@ -126,17 +132,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         // Enemy shooting
         enemyShootCooldown -= dt;
         if (enemyShootCooldown <= 0 && toPlayer.distance < 400) {
-          enemyBullets.add(enemyPos);
-          enemyBullets.add(Offset(cos(enemyAngle), sin(enemyAngle)) * 300);
+          enemyBullets.add(Bullet(
+            enemyPos,
+            Offset(cos(enemyAngle), sin(enemyAngle)) * 300
+          ));
           enemyShootCooldown = 1.5;
         }
         
         // Update bullets
-        for (int i = 0; i < enemyBullets.length; i += 2) {
-          enemyBullets[i] += enemyBullets[i+1] * dt;
+        for (var bullet in enemyBullets) {
+          bullet.pos += bullet.vel * dt;
         }
         // Remove off-screen bullets
-        enemyBullets.removeWhere((b) => (b - shipPos).distance > 1000);
+        enemyBullets.removeWhere((b) => (b.pos - shipPos).distance > 1000);
       }
       
       _calcTraj(); 
@@ -323,7 +331,7 @@ class GamePainter extends CustomPainter {
   final Offset enemyPos;
   final double enemyAngle;
   final bool enemyEngineOn;
-  final List<Offset> enemyBullets;
+  final List<Bullet> enemyBullets;
   final double enemyTimer;
   
   GamePainter(this.shipPos, this.angle, this.planet, this.traj, this.orbit, this.engineOn, this.cam, this.zoom, this.screenCenter, this.enemyActive, this.enemyPos, this.enemyAngle, this.enemyEngineOn, this.enemyBullets, this.enemyTimer);
@@ -409,8 +417,8 @@ class GamePainter extends CustomPainter {
       
       // Draw enemy bullets
       final bulletPaint = Paint()..color = Colors.yellow..style = PaintingStyle.fill;
-      for (int i = 0; i < enemyBullets.length; i += 2) {
-        c.drawCircle(enemyBullets[i], 3 / zoom, bulletPaint);
+      for (var bullet in enemyBullets) {
+        c.drawCircle(bullet.pos, 3 / zoom, bulletPaint);
       }
     } else {
       // Draw spawn timer
