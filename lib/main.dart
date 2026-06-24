@@ -104,8 +104,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void _update() {
     final dt = 1 / 60;  // Assume 60fps
     
-    if (planetCenter == Offset.zero) return;
-    
     setState(() {
       // Rotation with momentum lag
       final targetRotation = facingAngle + rotationInput * ROTATION_SPEED * dt;
