@@ -18,8 +18,8 @@ class SpaceDriftApp extends StatelessWidget {
 }
 
 class PhysicsSettings {
-  double planetMass = 168412.97;
-  double planetRadius = 60.0;
+  double planetMass = 16841297.0;  // 100x mass for 10x radius to maintain surface gravity
+  double planetRadius = 600.0;     // 10x bigger
   double shipRadius = 14.64;
   double thrustForce = 50.0;
   double rotationSpeed = 2.15;
@@ -27,6 +27,12 @@ class PhysicsSettings {
   double drag = 1.0;
   int trajSteps = 524;
   double trajDt = 0.08;
+  
+  // Moon settings
+  double moonMass = 500000.0;
+  double moonRadius = 80.0;
+  double moonOrbitRadius = 2500.0;
+  double moonOrbitSpeed = 0.15;  // angular velocity
 }
 
 final physics = PhysicsSettings();
@@ -58,6 +64,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   List<Offset> traj = [];
   List<Offset> orbit = [];
   
+  // Moon
+  Offset moonPos = Offset(physics.moonOrbitRadius, 0);
+  
   // Enemy ship
   Offset enemyPos = Offset.zero;
   Offset enemyVel = Offset.zero;
@@ -67,6 +76,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   double enemyTimer = 10.0;
   List<Bullet> enemyBullets = [];
   double enemyShootCooldown = 0;
+  
+  // Enemy AI settings (tunable)
+  double enemyAggression = 1.0;      // shots per second multiplier
+  double enemyLeadAccuracy = 1.0;    // 0=aim at player, 1=perfect lead
+  double enemyThrustDiscipline = 0.5; // 0=always thrust, 1=only when efficient
+  double enemyReactionLag = 0.1;     // seconds delay in response
 
   @override
   void initState() { 
@@ -77,10 +92,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _reset() {
-    shipPos = Offset(physics.planetRadius + 200, 0);
+    shipPos = Offset(physics.planetRadius + 400, 0);
     vel = Offset(0, sqrt(physics.planetMass / shipPos.distance));
     angle = rot = -pi/2;
     fuel = 100;
+    moonPos = Offset(physics.moonOrbitRadius, 0);
     _calcTraj(); 
     _calcOrbit();
   }
@@ -104,6 +120,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       vel *= physics.drag;
       shipPos += vel * dt;
       
+      // Update moon position
+      final moonAngle = atan2(moonPos.dy, moonPos.dx) + physics.moonOrbitSpeed * dt;
+      moonPos = Offset(cos(moonAngle) * physics.moonOrbitRadius, sin(moonAngle) * physics.moonOrbitRadius);
+      
+      // Apply moon gravity to player
+      final toMoon = moonPos - shipPos;
+      final distMoon = toMoon.distance;
+      if (distMoon > 10) vel += (toMoon / distMoon) * (physics.moonMass / (distMoon * distMoon)) * dt;
+      
       // Enemy spawn timer
       if (!enemyActive) {
         enemyTimer -= dt;
@@ -114,29 +139,50 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           enemyAngle = enemyRot = pi/2;
         }
       } else {
-        // Enemy AI: point at player and thrust occasionally
+        // Predictive targeting: aim where player will be
         final toPlayer = shipPos - enemyPos;
-        final targetAngle = atan2(toPlayer.dy, toPlayer.dx);
-        enemyRot = lerpAngle(enemyRot, targetAngle, 0.02);
+        final playerDist = toPlayer.distance;
+        final bulletSpeed = 300.0;
+        final timeToHit = playerDist / bulletSpeed;
+        
+        // Predict player position (simple linear prediction blended with current)
+        final predictedPos = shipPos + vel * timeToHit * enemyLeadAccuracy;
+        final aimOffset = predictedPos - enemyPos;
+        final targetAngle = atan2(aimOffset.dy, aimOffset.dx);
+        
+        // Reaction lag
+        enemyRot = lerpAngle(enemyRot, targetAngle, (1 - enemyReactionLag) * 0.05);
         enemyAngle = enemyRot;
-        enemyThrottle = toPlayer.distance > 200 ? 0.3 : 0.0;
+        
+        // Thrust discipline: only thrust when angle is aligned and moving away
+        final angleDiff = (enemyAngle - atan2(toPlayer.dy, toPlayer.dx)).abs();
+        final closingVelocity = enemyVel.dot(toPlayer / playerDist) - vel.dot(toPlayer / playerDist);
+        final shouldThrust = angleDiff < 0.5 && (closingVelocity < 0 || playerDist > 800);
+        enemyThrottle = shouldThrust ? 0.3 * (1 - enemyThrustDiscipline * 0.5) : 0.0;
+        
         if (enemyThrottle > 0) {
           enemyVel += Offset(cos(enemyAngle), sin(enemyAngle)) * physics.thrustForce * enemyThrottle * dt;
         }
+        
+        // Apply gravity (planet + moon)
         final toPE = planet - enemyPos;
         final distE = toPE.distance;
         if (distE > 10) enemyVel += (toPE / distE) * (physics.planetMass / (distE * distE)) * dt;
+        final toMoonE = moonPos - enemyPos;
+        final distMoonE = toMoonE.distance;
+        if (distMoonE > 10) enemyVel += (toMoonE / distMoonE) * (physics.moonMass / (distMoonE * distMoonE)) * dt;
+        
         enemyVel *= physics.drag;
         enemyPos += enemyVel * dt;
         
-        // Enemy shooting
-        enemyShootCooldown -= dt;
-        if (enemyShootCooldown <= 0 && toPlayer.distance < 400) {
+        // Enemy shooting with aggression modifier
+        enemyShootCooldown -= dt * enemyAggression;
+        if (enemyShootCooldown <= 0 && playerDist < 600 && angleDiff < 0.3) {
           enemyBullets.add(Bullet(
             enemyPos,
-            Offset(cos(enemyAngle), sin(enemyAngle)) * 300
+            Offset(cos(enemyAngle), sin(enemyAngle)) * bulletSpeed
           ));
-          enemyShootCooldown = 1.5;
+          enemyShootCooldown = 1.0;
         }
         
         // Update bullets
@@ -196,7 +242,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Stack(children: [
-          CustomPaint(size: size, painter: GamePainter(shipPos, angle, planet, traj, orbit, engineOn && throttle > 0, cam, zoom, center, enemyActive, enemyPos, enemyAngle, enemyThrottle > 0, enemyBullets, enemyTimer)),
+          CustomPaint(size: size, painter: GamePainter(shipPos, angle, planet, traj, orbit, engineOn && throttle > 0, cam, zoom, center, enemyActive, enemyPos, enemyAngle, enemyThrottle > 0, enemyBullets, enemyTimer, moonPos)),
           if (showSettings) Positioned.fill(child: _settingsPanel()),
           if (!showSettings) ...[
             Positioned(left: 20, bottom: 20, child: _controls()),
@@ -254,19 +300,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Widget _settingsPanel() {
     return SafeArea(child: Column(children: [
       Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white24))), child: Row(children: [
-        const Icon(Icons.tune, color: Colors.cyan), const SizedBox(width: 12), const Expanded(child: Text('PHYSICS SETTINGS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+        const Icon(Icons.tune, color: Colors.red), const SizedBox(width: 12), const Expanded(child: Text('ENEMY SETTINGS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
         TextButton.icon(onPressed: _reset, icon: const Icon(Icons.restart_alt, size: 16), label: const Text('RESET')),
         TextButton.icon(onPressed: () => setState(() => showSettings = false), icon: const Icon(Icons.close, size: 16), label: const Text('CLOSE')),
       ])),
       Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(12), child: Wrap(spacing: 12, runSpacing: 12, children: [
-        _setSlider('Planet Mass', physics.planetMass, 5000.0, 200000.0, (v) => physics.planetMass = v, Colors.purple, Icons.public),
-        _setSlider('Thrust Force', physics.thrustForce, 50.0, 1200.0, (v) => physics.thrustForce = v, Colors.orange, Icons.rocket),
-        _setSlider('Rotation Speed', physics.rotationSpeed, 0.5, 8.0, (v) => physics.rotationSpeed = v, Colors.cyan, Icons.rotate_right),
-        _setSlider('Rotation Lag', physics.rotationLag, 0.0, 0.95, (v) => physics.rotationLag = v, Colors.yellow, Icons.speed),
-        _setSlider('Space Drag', physics.drag, 0.99, 1.0, (v) => physics.drag = v, Colors.blue, Icons.air),
-        _setSlider('Planet Radius', physics.planetRadius, 20.0, 150.0, (v) => physics.planetRadius = v, Colors.green, Icons.circle),
-        _setSlider('Ship Radius', physics.shipRadius, 5.0, 25.0, (v) => physics.shipRadius = v, Colors.grey, Icons.rocket_launch),
-        _setSlider('Traj Steps', physics.trajSteps.toDouble(), 50.0, 800.0, (v) => physics.trajSteps = v.toInt(), Colors.teal, Icons.timeline),
+        _setSlider('Aggression', enemyAggression, 0.1, 3.0, (v) => enemyAggression = v, Colors.red, Icons.local_fire_department),
+        _setSlider('Lead Accuracy', enemyLeadAccuracy, 0.0, 1.0, (v) => enemyLeadAccuracy = v, Colors.orange, Icons.track_changes),
+        _setSlider('Thrust Discipline', enemyThrustDiscipline, 0.0, 1.0, (v) => enemyThrustDiscipline = v, Colors.yellow, Icons.speed),
+        _setSlider('Reaction Lag', enemyReactionLag, 0.0, 0.5, (v) => enemyReactionLag = v, Colors.purple, Icons.timer),
+        _setSlider('Spawn Timer', enemyTimer, 3.0, 30.0, (v) => enemyTimer = v, Colors.cyan, Icons.hourglass_bottom),
       ]))),
     ]));
   }
@@ -333,8 +376,9 @@ class GamePainter extends CustomPainter {
   final bool enemyEngineOn;
   final List<Bullet> enemyBullets;
   final double enemyTimer;
+  final Offset moonPos;
   
-  GamePainter(this.shipPos, this.angle, this.planet, this.traj, this.orbit, this.engineOn, this.cam, this.zoom, this.screenCenter, this.enemyActive, this.enemyPos, this.enemyAngle, this.enemyEngineOn, this.enemyBullets, this.enemyTimer);
+  GamePainter(this.shipPos, this.angle, this.planet, this.traj, this.orbit, this.engineOn, this.cam, this.zoom, this.screenCenter, this.enemyActive, this.enemyPos, this.enemyAngle, this.enemyEngineOn, this.enemyBullets, this.enemyTimer, this.moonPos);
 
   @override
   void paint(Canvas c, Size s) {
@@ -370,12 +414,18 @@ class GamePainter extends CustomPainter {
       c.drawPath(path, tPaint);
     }
 
+    // Draw moon
+    final moonGlow = Paint()..color = Colors.grey.shade400.withOpacity(0.2)..style = PaintingStyle.fill;
+    final moonBody = Paint()..color = Colors.grey.shade500..style = PaintingStyle.fill;
+    c.drawCircle(moonPos, physics.moonRadius + 5, moonGlow);
+    c.drawCircle(moonPos, physics.moonRadius, moonBody);
+    
     final glow = Paint()..color = Colors.blue.shade400.withOpacity(0.3)..style = PaintingStyle.fill;
     final body = Paint()..color = Colors.blue.shade700..style = PaintingStyle.fill;
     final hl = Paint()..color = Colors.blue.shade300.withOpacity(0.4)..style = PaintingStyle.fill;
-    c.drawCircle(planet, physics.planetRadius + 10, glow);
+    c.drawCircle(planet, physics.planetRadius + 50, glow);
     c.drawCircle(planet, physics.planetRadius, body);
-    c.drawCircle(planet - const Offset(15, 15), physics.planetRadius * 0.3, hl);
+    c.drawCircle(planet - const Offset(60, 60), physics.planetRadius * 0.3, hl);
 
     if (engineOn) {
       final ep = Paint()..color = Colors.orange.withOpacity(0.6 + Random().nextDouble() * 0.4)..style = PaintingStyle.fill;
