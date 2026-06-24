@@ -19,11 +19,16 @@ jobs:
           flutter-version: '3.22.0'
           channel: 'stable'
       
-      - name: Create local.properties
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+      
+      - name: Recreate Android project
         run: |
-          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
-          echo "flutter.versionCode=1" >> android/local.properties
-          echo "flutter.versionName=1.0.0" >> android/local.properties
+          rm -rf android/
+          flutter create --platforms=android . --project-name=solar_cargo_company
       
       - name: Get dependencies
         run: flutter pub get
