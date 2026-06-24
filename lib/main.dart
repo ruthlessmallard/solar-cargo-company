@@ -211,12 +211,48 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Widget _setSlider(String label, double val, double min, double max, ValueChanged<double> onChanged, Color color, IconData icon) {
-    return StatefulBuilder(builder: (ctx, setSt) => Container(width: 260, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(0.3))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [Icon(icon, color: color, size: 16), const SizedBox(width: 6), Expanded(child: Text(label.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color))), Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(4)), child: Text(label.contains('Steps') ? val.toInt().toString() : val.toStringAsFixed(2), style: TextStyle(fontSize: 11, color: color, fontFamily: 'monospace')))])),
-        Slider(value: val, min: min, max: max, onChanged: (v) { setSt(() {}); onChanged(v); }, activeColor: color, inactiveColor: color.withOpacity(0.2)),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(min.toStringAsFixed(min < 1 ? 2 : 0), style: TextStyle(fontSize: 9, color: Colors.white38)), Text(max.toStringAsFixed(max > 1000 ? 0 : max < 1 ? 2 : 0), style: TextStyle(fontSize: 9, color: Colors.white38))]),
-      ])));
+    return StatefulBuilder(builder: (ctx, setSt) {
+      return Container(
+        width: 260, 
+        padding: const EdgeInsets.all(12), 
+        decoration: BoxDecoration(
+          color: Colors.black45, 
+          borderRadius: BorderRadius.circular(10), 
+          border: Border.all(color: color.withOpacity(0.3))
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, 
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            Row(children: [
+              Icon(icon, color: color, size: 16), 
+              const SizedBox(width: 6), 
+              Expanded(child: Text(label.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color))), 
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), 
+                decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(4)), 
+                child: Text(label.contains('Steps') ? val.toInt().toString() : val.toStringAsFixed(2), style: TextStyle(fontSize: 11, color: color, fontFamily: 'monospace'))
+              )
+            ]),
+            Slider(
+              value: val, 
+              min: min, 
+              max: max, 
+              onChanged: (v) { setSt(() {}); onChanged(v); }, 
+              activeColor: color, 
+              inactiveColor: color.withOpacity(0.2)
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+              children: [
+                Text(min.toStringAsFixed(min < 1 ? 2 : 0), style: TextStyle(fontSize: 9, color: Colors.white38)),
+                Text(max.toStringAsFixed(max > 1000 ? 0 : max < 1 ? 2 : 0), style: TextStyle(fontSize: 9, color: Colors.white38))
+              ]
+            ),
+          ]
+        )
+      );
+    });
   }
 }
 
