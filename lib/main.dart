@@ -135,13 +135,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         velocity += thrustVector;
       }
       
-      // Gravity
+      // Gravity - simplified model for gameplay feel
       final toPlanet = planetCenter - shipPosition;
       final distance = toPlanet.distance;
-      if (distance > physics.planetRadius + physics.shipRadius) {
+      if (distance > physics.planetRadius) {
         final gravityDir = toPlanet / distance;
-        final gravityForce = physics.gravityStrength / (distance * distance);
-        velocity += gravityDir * gravityForce * dt;
+        // Linear gravity for better gameplay feel (inverse-square is too weak at distance)
+        final gravityForce = physics.gravityStrength * dt / (distance * 0.5);
+        velocity += gravityDir * gravityForce;
       }
       
       // Apply drag
