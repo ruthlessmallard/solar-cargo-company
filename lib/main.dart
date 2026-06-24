@@ -29,10 +29,10 @@ class PhysicsSettings {
   double trajDt = 0.08;
   
   // Moon settings
-  double moonMass = 500000.0;
+  double moonMass = 2000000.0;     // 4x stronger gravity
   double moonRadius = 80.0;
   double moonOrbitRadius = 2500.0;
-  double moonOrbitSpeed = 0.15;  // angular velocity
+  double moonOrbitSpeed = 0.015;   // 10x slower, crawling
 }
 
 final physics = PhysicsSettings();
