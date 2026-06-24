@@ -156,7 +156,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         
         // Thrust discipline: only thrust when angle is aligned and moving away
         final angleDiff = (enemyAngle - atan2(toPlayer.dy, toPlayer.dx)).abs();
-        final closingVelocity = enemyVel.dot(toPlayer / playerDist) - vel.dot(toPlayer / playerDist);
+        final toPlayerNorm = toPlayer / playerDist;
+        final closingVelocity = (enemyVel.dx * toPlayerNorm.dx + enemyVel.dy * toPlayerNorm.dy) - (vel.dx * toPlayerNorm.dx + vel.dy * toPlayerNorm.dy);
         final shouldThrust = angleDiff < 0.5 && (closingVelocity < 0 || playerDist > 800);
         enemyThrottle = shouldThrust ? 0.3 * (1 - enemyThrustDiscipline * 0.5) : 0.0;
         
