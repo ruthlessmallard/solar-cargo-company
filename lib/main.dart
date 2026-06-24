@@ -16,6 +16,12 @@ const double SHIP_RADIUS = 12.0;            // Ship size
 const double PROJECTILE_SPEED = 500.0;      // Bullet speed
 const double PROJECTILE_LIFETIME = 2.0;     // Seconds before bullet despawns
 
+// Camera settings
+const double MIN_ZOOM = 0.3;                // Minimum zoom (zoomed out)
+const double MAX_ZOOM = 2.0;                // Maximum zoom (zoomed in)
+const double ZOOM_PADDING = 150.0;          // Extra space around ship+planet
+const double ZOOM_SMOOTHING = 0.05;         // Camera zoom smoothing (0-1)
+
 // =============================================================================
 // MAIN ENTRY
 // =============================================================================
@@ -72,8 +78,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // Projectiles
   List<Projectile> projectiles = [];
   
-  // Planet position (center of screen, set in layout)
-  Offset planetCenter = Offset.zero;
+  // Planet position (fixed in world space)
+  final Offset planetCenter = Offset.zero;
+  
+  // Camera state
+  Offset cameraPosition = Offset.zero;
+  double cameraZoom = 1.0;
   
   @override
   void initState() {
@@ -149,19 +159,37 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
   
+  double _calculateZoom(Size screenSize, double distanceToPlanet) {
+    // Calculate required zoom to fit both ship and planet
+    final minDimension = min(screenSize.width, screenSize.height);
+    final requiredView = (distanceToPlanet + PLANET_RADIUS + ZOOM_PADDING) * 2;
+    final targetZoom = minDimension / requiredView;
+    return targetZoom.clamp(MIN_ZOOM, MAX_ZOOM);
+  }
+  
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        planetCenter = Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);
+        final screenSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final screenCenter = Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);
         
-        // Initialize ship position if at default
+        // Initialize ship position if at default (start near planet)
         if (shipPosition == const Offset(200, 300)) {
-          shipPosition = Offset(
-            constraints.maxWidth * 0.2,
-            constraints.maxHeight / 2,
-          );
+          shipPosition = const Offset(200, 0); // Start to the right of planet
         }
+        
+        // Update camera to follow ship and include planet
+        final targetCamera = shipPosition;
+        final distanceToPlanet = (shipPosition - planetCenter).distance;
+        final targetZoom = _calculateZoom(screenSize, distanceToPlanet);
+        
+        // Smooth camera transitions
+        cameraPosition = Offset(
+          lerp(cameraPosition.dx, targetCamera.dx, 0.1),
+          lerp(cameraPosition.dy, targetCamera.dy, 0.1),
+        );
+        cameraZoom = lerp(cameraZoom, targetZoom, ZOOM_SMOOTHING);
         
         return Scaffold(
           backgroundColor: Colors.black,
@@ -169,13 +197,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             children: [
               // Game canvas
               CustomPaint(
-                size: Size(constraints.maxWidth, constraints.maxHeight),
+                size: screenSize,
                 painter: GamePainter(
                   planetCenter: planetCenter,
                   shipPosition: shipPosition,
                   shipAngle: facingAngle,
                   projectiles: projectiles,
                   engineOn: engineOn && throttle > 0,
+                  cameraPosition: cameraPosition,
+                  cameraZoom: cameraZoom,
+                  screenCenter: screenCenter,
                 ),
               ),
               
@@ -332,6 +363,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         'ALT: ${(shipPosition - planetCenter).distance.toStringAsFixed(0)}',
                         style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
                       ),
+                      Text(
+                        'ZOOM: ${cameraZoom.toStringAsFixed(2)}x',
+                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+                      ),
                     ],
                   ),
                 ),
@@ -374,6 +409,9 @@ class GamePainter extends CustomPainter {
   final double shipAngle;
   final List<Projectile> projectiles;
   final bool engineOn;
+  final Offset cameraPosition;
+  final double cameraZoom;
+  final Offset screenCenter;
   
   GamePainter({
     required this.planetCenter,
@@ -381,18 +419,30 @@ class GamePainter extends CustomPainter {
     required this.shipAngle,
     required this.projectiles,
     required this.engineOn,
+    required this.cameraPosition,
+    required this.cameraZoom,
+    required this.screenCenter,
   });
   
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw starfield
+    // Apply camera transform: center on cameraPosition at cameraZoom
+    canvas.save();
+    
+    // Translate to screen center, scale, then translate to camera position
+    canvas.translate(screenCenter.dx, screenCenter.dy);
+    canvas.scale(cameraZoom);
+    canvas.translate(-cameraPosition.dx, -cameraPosition.dy);
+    
+    // Draw starfield (parallax - move slower than camera for depth)
     final random = Random(42);
     final starPaint = Paint()..color = Colors.white.withOpacity(0.5);
-    for (var i = 0; i < 100; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height;
+    for (var i = 0; i < 200; i++) {
+      // Larger starfield to cover zoomed out views
+      final x = (random.nextDouble() * 4000 - 2000);
+      final y = (random.nextDouble() * 4000 - 2000);
       final r = random.nextDouble() * 1.5 + 0.5;
-      canvas.drawCircle(Offset(x, y), r, starPaint);
+      canvas.drawCircle(Offset(x, y), r / cameraZoom, starPaint);
     }
     
     // Draw gravity well indicator (subtle ring)
@@ -433,8 +483,10 @@ class GamePainter extends CustomPainter {
       ..color = Colors.yellow
       ..style = PaintingStyle.fill;
     for (final p in projectiles) {
-      canvas.drawCircle(p.position, 3, bulletPaint);
+      canvas.drawCircle(p.position, 3 / cameraZoom, bulletPaint);
     }
+    
+    canvas.restore();
   }
   
   void _drawShip(Canvas canvas) {
@@ -474,7 +526,7 @@ class GamePainter extends CustomPainter {
     final shipOutlinePaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = 2 / cameraZoom;
     
     canvas.drawCircle(shipPosition, SHIP_RADIUS, shipPaint);
     canvas.drawCircle(shipPosition, SHIP_RADIUS, shipOutlinePaint);
@@ -484,13 +536,13 @@ class GamePainter extends CustomPainter {
       ..color = Colors.cyan
       ..style = PaintingStyle.fill;
     final nosePos = shipPosition + Offset(cos(shipAngle), sin(shipAngle)) * (SHIP_RADIUS - 3);
-    canvas.drawCircle(nosePos, 4, nosePaint);
+    canvas.drawCircle(nosePos, 4 / cameraZoom, nosePaint);
     
     // Rotation indicator
     final indicatorPaint = Paint()
       ..color = Colors.white.withOpacity(0.5)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
+      ..strokeWidth = 1 / cameraZoom;
     canvas.drawArc(
       Rect.fromCenter(center: shipPosition, width: SHIP_RADIUS * 2.5, height: SHIP_RADIUS * 2.5),
       shipAngle - pi / 6,
@@ -513,4 +565,8 @@ double lerpAngle(double a, double b, double t) {
   while (delta > pi) delta -= 2 * pi;
   while (delta < -pi) delta += 2 * pi;
   return a + delta * t;
+}
+
+double lerp(double a, double b, double t) {
+  return a + (b - a) * t;
 }
