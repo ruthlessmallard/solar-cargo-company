@@ -28,12 +28,24 @@ class PhysicsSettings {
   int trajSteps = 524;
   double trajDt = 0.08;
   
-  // Moon settings
+  // Blue planet moon settings
   double moonMass = 2000000.0;     // 4x stronger gravity
   double moonRadius = 80.0;
   double moonOrbitRadius = 2500.0;
   double moonOrbitSpeed = 0.015;   // 10x slower, crawling
-}
+  
+  // Mars settings
+  double marsMass = 8000000.0;       // Half of blue planet
+  double marsRadius = 400.0;         // 2/3 the size
+  Offset marsPos = const Offset(-5000, -3500);  // Upper left quadrant
+  
+  // Mars moons
+  double phobosOrbitRadius = 900.0;
+  double phobosOrbitSpeed = 0.08;    // Fast, close
+  double deimosOrbitRadius = 1400.0;
+  double deimosOrbitSpeed = 0.04;    // Slower, farther
+  double marsMoonRadius = 25.0;      // Tiny
+  double marsMoonMass = 500000.0;    // Minimal gravity
 
 final physics = PhysicsSettings();
 
@@ -64,8 +76,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   List<Offset> traj = [];
   List<Offset> orbit = [];
   
-  // Moon
+  // Blue planet moon
   Offset moonPos = Offset(physics.moonOrbitRadius, 0);
+  
+  // Mars moons (relative to mars position)
+  Offset phobosPos = Offset(physics.phobosOrbitRadius, 0);
+  Offset deimosPos = Offset(physics.deimosOrbitRadius, 0);
+  double marsOrbitAngle = 0;
   
   // Enemy ship
   Offset enemyPos = Offset.zero;
@@ -97,6 +114,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     angle = rot = -pi/2;
     fuel = 100;
     moonPos = Offset(physics.moonOrbitRadius, 0);
+    marsOrbitAngle = 0;
+    phobosPos = physics.marsPos + Offset(physics.phobosOrbitRadius, 0);
+    deimosPos = physics.marsPos + Offset(physics.deimosOrbitRadius, 0);
     _calcTraj(); 
     _calcOrbit();
   }
@@ -120,14 +140,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       vel *= physics.drag;
       shipPos += vel * dt;
       
-      // Update moon position
+      // Update blue planet moon position
       final moonAngle = atan2(moonPos.dy, moonPos.dx) + physics.moonOrbitSpeed * dt;
       moonPos = Offset(cos(moonAngle) * physics.moonOrbitRadius, sin(moonAngle) * physics.moonOrbitRadius);
       
-      // Apply moon gravity to player
+      // Apply blue moon gravity to player
       final toMoon = moonPos - shipPos;
       final distMoon = toMoon.distance;
       if (distMoon > 10) vel += (toMoon / distMoon) * (physics.moonMass / (distMoon * distMoon)) * dt;
+      
+      // Update Mars moons (orbit around mars position)
+      marsOrbitAngle += physics.phobosOrbitSpeed * dt;  // Phobos is fast
+      phobosPos = physics.marsPos + Offset(cos(marsOrbitAngle) * physics.phobosOrbitRadius, sin(marsOrbitAngle) * physics.phobosOrbitRadius);
+      deimosPos = physics.marsPos + Offset(cos(marsOrbitAngle * 0.5) * physics.deimosOrbitRadius, sin(marsOrbitAngle * 0.5) * physics.deimosOrbitRadius);
+      
+      // Apply Mars gravity to player (weak, distant)
+      final toMars = physics.marsPos - shipPos;
+      final distMars = toMars.distance;
+      if (distMars > physics.marsRadius + 10) vel += (toMars / distMars) * (physics.marsMass / (distMars * distMars)) * dt;
       
       // Enemy spawn timer
       if (!enemyActive) {
@@ -165,13 +195,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           enemyVel += Offset(cos(enemyAngle), sin(enemyAngle)) * physics.thrustForce * enemyThrottle * dt;
         }
         
-        // Apply gravity (planet + moon)
+        // Apply gravity (planet + moon + Mars)
         final toPE = planet - enemyPos;
         final distE = toPE.distance;
         if (distE > 10) enemyVel += (toPE / distE) * (physics.planetMass / (distE * distE)) * dt;
         final toMoonE = moonPos - enemyPos;
         final distMoonE = toMoonE.distance;
         if (distMoonE > 10) enemyVel += (toMoonE / distMoonE) * (physics.moonMass / (distMoonE * distMoonE)) * dt;
+        // Mars gravity on enemy
+        final toMarsE = physics.marsPos - enemyPos;
+        final distMarsE = toMarsE.distance;
+        if (distMarsE > physics.marsRadius + 10) enemyVel += (toMarsE / distMarsE) * (physics.marsMass / (distMarsE * distMarsE)) * dt;
         
         enemyVel *= physics.drag;
         enemyPos += enemyVel * dt;
@@ -243,7 +277,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Stack(children: [
-          CustomPaint(size: size, painter: GamePainter(shipPos, angle, planet, traj, orbit, engineOn && throttle > 0, cam, zoom, center, enemyActive, enemyPos, enemyAngle, enemyThrottle > 0, enemyBullets, enemyTimer, moonPos)),
+          CustomPaint(size: size, painter: GamePainter(shipPos, angle, planet, traj, orbit, engineOn && throttle > 0, cam, zoom, center, enemyActive, enemyPos, enemyAngle, enemyThrottle > 0, enemyBullets, enemyTimer, moonPos, physics.marsPos, phobosPos, deimosPos)),
           if (showSettings) Positioned.fill(child: _settingsPanel()),
           if (!showSettings) ...[
             Positioned(left: 20, bottom: 20, child: _controls()),
@@ -378,8 +412,11 @@ class GamePainter extends CustomPainter {
   final List<Bullet> enemyBullets;
   final double enemyTimer;
   final Offset moonPos;
+  final Offset marsPos;
+  final Offset phobosPos;
+  final Offset deimosPos;
   
-  GamePainter(this.shipPos, this.angle, this.planet, this.traj, this.orbit, this.engineOn, this.cam, this.zoom, this.screenCenter, this.enemyActive, this.enemyPos, this.enemyAngle, this.enemyEngineOn, this.enemyBullets, this.enemyTimer, this.moonPos);
+  GamePainter(this.shipPos, this.angle, this.planet, this.traj, this.orbit, this.engineOn, this.cam, this.zoom, this.screenCenter, this.enemyActive, this.enemyPos, this.enemyAngle, this.enemyEngineOn, this.enemyBullets, this.enemyTimer, this.moonPos, this.marsPos, this.phobosPos, this.deimosPos);
 
   @override
   void paint(Canvas c, Size s) {
@@ -420,6 +457,28 @@ class GamePainter extends CustomPainter {
     final moonBody = Paint()..color = Colors.grey.shade500..style = PaintingStyle.fill;
     c.drawCircle(moonPos, physics.moonRadius + 5, moonGlow);
     c.drawCircle(moonPos, physics.moonRadius, moonBody);
+    
+    // Draw Mars
+    final marsGlow = Paint()..color = Colors.orange.shade400.withOpacity(0.15)..style = PaintingStyle.fill;
+    final marsBody = Paint()..color = Colors.orange.shade700..style = PaintingStyle.fill;
+    final marsHl = Paint()..color = Colors.orange.shade300.withOpacity(0.3)..style = PaintingStyle.fill;
+    c.drawCircle(marsPos, physics.marsRadius + 30, marsGlow);
+    c.drawCircle(marsPos, physics.marsRadius, marsBody);
+    c.drawCircle(marsPos - const Offset(40, 40), physics.marsRadius * 0.3, marsHl);
+    
+    // Draw Mars moons (Phobos and Deimos)
+    final phobosPaint = Paint()..color = Colors.orange.shade300..style = PaintingStyle.fill;
+    final deimosPaint = Paint()..color = Colors.orange.shade200..style = PaintingStyle.fill;
+    c.drawCircle(phobosPos, physics.marsMoonRadius, phobosPaint);
+    c.drawCircle(deimosPos, physics.marsMoonRadius * 0.8, deimosPaint);
+    
+    // Draw direction line from ship to Mars
+    final toMars = marsPos - shipPos;
+    final distToMars = toMars.distance;
+    if (distToMars > 10) {
+      final dirLine = Paint()..color = Colors.orange.shade400.withOpacity(0.5)..style = PaintingStyle.stroke..strokeWidth = 2 / zoom;
+      c.drawLine(shipPos, shipPos + (toMars / distToMars) * min(distToMars * 0.3, 200), dirLine);
+    }
     
     final glow = Paint()..color = Colors.blue.shade400.withOpacity(0.3)..style = PaintingStyle.fill;
     final body = Paint()..color = Colors.blue.shade700..style = PaintingStyle.fill;
